@@ -3,6 +3,7 @@ using Hotdesks.Booking.Api.Data;
 using Hotdesks.Booking.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Hotdesks.Booking.Api.Controllers;
 
@@ -57,25 +58,54 @@ public sealed class ReservationsController(HotdesksBookingDbContext dbContext) :
             return NotFound($"Enabled hotdesk '{request.HotdeskId}' was not found.");
         }
 
-        var reservation = new Reservation
+        try
         {
-            Id = Guid.NewGuid(),
-            UserId = request.UserId,
-            HotdeskId = request.HotdeskId,
-            From = request.From,
-            To = request.To
-        };
+            var reservation = new Reservation
+            {
+                Id = Guid.NewGuid(),
+                UserId = request.UserId,
+                HotdeskId = request.HotdeskId,
+                From = request.From,
+                To = request.To
+            };
 
-        dbContext.Reservations.Add(reservation);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            dbContext.Reservations.Add(reservation);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Created(
-            $"/reservation/{reservation.Id}",
-            new ReservationResponse(
-                reservation.Id,
-                reservation.UserId,
-                reservation.HotdeskId,
-                reservation.From,
-                reservation.To));
+            return Created(
+                $"/reservation/{reservation.Id}",
+                new ReservationResponse(
+                    reservation.Id,
+                    reservation.UserId,
+                    reservation.HotdeskId,
+                    reservation.From,
+                    reservation.To));
+        }
+        catch (DbUpdateException exception)
+            when (FindPostgresException(exception) is
+            {
+                SqlState: PostgresErrorCodes.ExclusionViolation,
+                ConstraintName: "EX_Reservations_HotdeskId_TimeRange_NoOverlap"
+            })
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "The hotdesk is already reserved for the requested time range."
+            });
+        }
+    }
+
+    private static PostgresException? FindPostgresException(Exception exception)
+    {
+        for (var currentException = exception; currentException is not null; currentException = currentException.InnerException)
+        {
+            if (currentException is PostgresException postgresException)
+            {
+                return postgresException;
+            }
+        }
+
+        return null;
     }
 }

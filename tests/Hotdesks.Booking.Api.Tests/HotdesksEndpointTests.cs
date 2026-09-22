@@ -5,8 +5,10 @@ using Hotdesks.Booking.Api.Data;
 using Hotdesks.Booking.Api.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 
 namespace Hotdesks.Booking.Api.Tests;
 
@@ -176,6 +178,105 @@ public sealed class HotdesksEndpointTests(HotdesksApiFactory factory) : IClassFi
         }
     }
 
+    [Fact]
+    public async Task Adding_an_overlapping_reservation_returns_conflict()
+    {
+        using var client = factory.CreateClient();
+        var userId = await CreateUserAsync();
+        var hotdeskId = await CreateHotdeskAsync(client);
+        var reservationId = Guid.Empty;
+        var from = DateTimeOffset.UtcNow.AddHours(1);
+
+        try
+        {
+            var firstResponse = await client.PostAsJsonAsync(
+                "/reservation/add",
+                new AddReservationRequest
+                {
+                    UserId = userId,
+                    HotdeskId = hotdeskId,
+                    From = from,
+                    To = from.AddHours(1)
+                });
+            Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+            var firstReservation = await firstResponse.Content.ReadFromJsonAsync<ReservationResponse>();
+            Assert.NotNull(firstReservation);
+            reservationId = firstReservation.Id;
+
+            var overlapResponse = await client.PostAsJsonAsync(
+                "/reservation/add",
+                new AddReservationRequest
+                {
+                    UserId = userId,
+                    HotdeskId = hotdeskId,
+                    From = from.AddMinutes(30),
+                    To = from.AddHours(2)
+                });
+
+            Assert.Equal(HttpStatusCode.Conflict, overlapResponse.StatusCode);
+        }
+        finally
+        {
+            await RemoveReservationAsync(reservationId);
+            await RemoveHotdeskAsync(hotdeskId);
+            await RemoveUserAsync(userId);
+        }
+    }
+
+    [Fact]
+    public async Task Database_rejects_an_overlapping_reservation()
+    {
+        using var client = factory.CreateClient();
+        var userId = await CreateUserAsync();
+        var hotdeskId = await CreateHotdeskAsync(client);
+        var reservationId = Guid.Empty;
+        var from = DateTimeOffset.UtcNow.AddHours(1);
+
+        try
+        {
+            await using var scope = factory.Services.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<HotdesksBookingDbContext>();
+
+            var firstReservation = new Reservation
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                HotdeskId = hotdeskId,
+                From = from,
+                To = from.AddHours(1)
+            };
+            dbContext.Reservations.Add(firstReservation);
+            await dbContext.SaveChangesAsync();
+            reservationId = firstReservation.Id;
+
+            dbContext.Reservations.Add(new Reservation
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                HotdeskId = hotdeskId,
+                From = from.AddMinutes(30),
+                To = from.AddHours(2)
+            });
+
+            var exception = await Assert.ThrowsAsync<DbUpdateException>(
+                () => dbContext.SaveChangesAsync());
+            var postgresException = FindPostgresException(exception);
+
+            Assert.NotNull(postgresException);
+            Assert.Equal(PostgresErrorCodes.ExclusionViolation, postgresException.SqlState);
+            Assert.Equal(
+                "EX_Reservations_HotdeskId_TimeRange_NoOverlap",
+                postgresException.ConstraintName);
+        }
+        finally
+        {
+            await RemoveReservationAsync(reservationId);
+            await RemoveHotdeskAsync(hotdeskId);
+            await RemoveUserAsync(userId);
+        }
+    }
+
     private static AddReservationRequest CreateReservationRequest(Guid userId, Guid hotdeskId)
     {
         var from = DateTimeOffset.UtcNow.AddHours(1);
@@ -203,6 +304,36 @@ public sealed class HotdesksEndpointTests(HotdesksApiFactory factory) : IClassFi
         await dbContext.SaveChangesAsync();
 
         return user.Id;
+    }
+
+    private static PostgresException? FindPostgresException(Exception exception)
+    {
+        for (var currentException = exception; currentException is not null; currentException = currentException.InnerException)
+        {
+            if (currentException is PostgresException postgresException)
+            {
+                return postgresException;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<Guid> CreateHotdeskAsync(HttpClient client)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/hotdesks",
+            new CreateHotdeskRequest
+            {
+                Name = $"Reservation desk {Guid.NewGuid():N}",
+                IsAvailable247 = true
+            });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var hotdesk = await response.Content.ReadFromJsonAsync<Hotdesk>();
+        Assert.NotNull(hotdesk);
+
+        return hotdesk.Id;
     }
 
     private async Task RemoveReservationAsync(Guid reservationId)

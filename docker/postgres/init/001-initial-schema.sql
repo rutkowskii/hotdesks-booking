@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE "Hotdesks" (
     "Id" uuid NOT NULL,
     "Name" character varying(64) NOT NULL,
@@ -34,8 +36,20 @@ CREATE TABLE "Reservations" (
 CREATE INDEX "IX_Reservations_HotdeskId" ON "Reservations" ("HotdeskId");
 CREATE INDEX "IX_Reservations_UserId" ON "Reservations" ("UserId");
 
+ALTER TABLE "Reservations"
+    ADD CONSTRAINT "CK_Reservations_FromBeforeTo"
+    CHECK ("From" < "To");
+
+ALTER TABLE "Reservations"
+    ADD CONSTRAINT "EX_Reservations_HotdeskId_TimeRange_NoOverlap"
+    EXCLUDE USING gist (
+        "HotdeskId" WITH =,
+        tstzrange("From", "To", '[)') WITH &&
+    );
+
 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
 VALUES
     ('20260922103938_InitialCreate', '10.0.12'),
     ('20260922134210_AddIsEnabledToHotdesk', '10.0.12'),
-    ('20260922143303_AddUsersAndReservations', '10.0.12');
+    ('20260922143303_AddUsersAndReservations', '10.0.12'),
+    ('20260922152818_AddReservationOverlapConstraint', '10.0.12');
