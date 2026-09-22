@@ -1,14 +1,10 @@
 namespace Hotdesks.Booking.Api.Models;
 
-public sealed class Hotdesk
+public sealed class User
 {
     public Guid Id { get; set; }
 
     public required string Name { get; set; }
-
-    public bool IsAvailable247 { get; set; }
-
-    public bool IsEnabled { get; set; } = true;
 
     public ICollection<Reservation> Reservations { get; } = new List<Reservation>();
 }

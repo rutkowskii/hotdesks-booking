@@ -8,6 +8,10 @@ public sealed class HotdesksBookingDbContext(
 {
     public DbSet<Hotdesk> Hotdesks => Set<Hotdesk>();
 
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<Reservation> Reservations => Set<Reservation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Hotdesk>(entity =>
@@ -23,6 +27,35 @@ public sealed class HotdesksBookingDbContext(
 
             entity.Property(hotdesk => hotdesk.IsEnabled)
                 .HasDefaultValue(true)
+                .IsRequired();
+
+            entity.HasMany(hotdesk => hotdesk.Reservations)
+                .WithOne(reservation => reservation.Hotdesk)
+                .HasForeignKey(reservation => reservation.HotdeskId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasKey(user => user.Id);
+
+            entity.Property(user => user.Name)
+                .IsRequired();
+
+            entity.HasMany(user => user.Reservations)
+                .WithOne(reservation => reservation.User)
+                .HasForeignKey(reservation => reservation.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Reservation>(entity =>
+        {
+            entity.HasKey(reservation => reservation.Id);
+
+            entity.Property(reservation => reservation.From)
+                .IsRequired();
+
+            entity.Property(reservation => reservation.To)
                 .IsRequired();
         });
     }
