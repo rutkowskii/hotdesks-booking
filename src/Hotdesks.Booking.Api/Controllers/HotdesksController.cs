@@ -1,4 +1,5 @@
 using Hotdesks.Booking.Api.Data;
+using Hotdesks.Booking.Api.Contracts;
 using Hotdesks.Booking.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,9 +15,43 @@ public sealed class HotdesksController(HotdesksBookingDbContext dbContext) : Con
     {
         var hotdesks = await dbContext.Hotdesks
             .AsNoTracking()
+            .Where(hotdesk => hotdesk.IsEnabled)
             .OrderBy(hotdesk => hotdesk.Name)
             .ToListAsync(cancellationToken);
 
         return Ok(hotdesks);
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<Hotdesk>> Create(
+        CreateHotdeskRequest request,
+        CancellationToken cancellationToken)
+    {
+        var hotdesk = new Hotdesk
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name,
+            IsAvailable247 = request.IsAvailable247
+        };
+
+        dbContext.Hotdesks.Add(hotdesk);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Created($"/api/hotdesks/{hotdesk.Id}", hotdesk);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        var hotdesk = await dbContext.Hotdesks.FindAsync([id], cancellationToken);
+        if (hotdesk is null)
+        {
+            return NotFound();
+        }
+
+        hotdesk.IsEnabled = false;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
     }
 }

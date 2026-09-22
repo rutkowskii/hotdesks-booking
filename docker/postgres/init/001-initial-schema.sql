@@ -2,6 +2,7 @@ CREATE TABLE "Hotdesks" (
     "Id" uuid NOT NULL,
     "Name" character varying(64) NOT NULL,
     "IsAvailable247" boolean NOT NULL,
+    "IsEnabled" boolean NOT NULL DEFAULT TRUE,
     CONSTRAINT "PK_Hotdesks" PRIMARY KEY ("Id")
 );
 
@@ -12,4 +13,6 @@ CREATE TABLE "__EFMigrationsHistory" (
 );
 
 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-VALUES ('20260922103938_InitialCreate', '10.0.12');
+VALUES
+    ('20260922103938_InitialCreate', '10.0.12'),
+    ('20260922134210_AddIsEnabledToHotdesk', '10.0.12');

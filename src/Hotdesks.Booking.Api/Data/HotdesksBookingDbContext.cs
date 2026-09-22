@@ -20,6 +20,10 @@ public sealed class HotdesksBookingDbContext(
 
             entity.Property(hotdesk => hotdesk.IsAvailable247)
                 .IsRequired();
+
+            entity.Property(hotdesk => hotdesk.IsEnabled)
+                .HasDefaultValue(true)
+                .IsRequired();
         });
     }
 }
