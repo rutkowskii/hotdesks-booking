@@ -23,7 +23,8 @@ public sealed class ReservationsController(HotdesksBookingDbContext dbContext) :
                 reservation.UserId,
                 reservation.HotdeskId,
                 reservation.From,
-                reservation.To))
+                reservation.To,
+                reservation.IsActive))
             .ToListAsync(cancellationToken);
 
         return Ok(reservations);
@@ -58,6 +59,22 @@ public sealed class ReservationsController(HotdesksBookingDbContext dbContext) :
             return NotFound($"Enabled hotdesk '{request.HotdeskId}' was not found.");
         }
 
+        var overlapsExistingReservation = await dbContext.Reservations
+            .AnyAsync(
+                reservation => reservation.IsActive
+                    && reservation.HotdeskId == request.HotdeskId
+                    && reservation.From < request.To
+                    && request.From < reservation.To,
+                cancellationToken);
+        if (overlapsExistingReservation)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "The hotdesk is already reserved for the requested time range."
+            });
+        }
+
         try
         {
             var reservation = new Reservation
@@ -79,7 +96,8 @@ public sealed class ReservationsController(HotdesksBookingDbContext dbContext) :
                     reservation.UserId,
                     reservation.HotdeskId,
                     reservation.From,
-                    reservation.To));
+                    reservation.To,
+                    reservation.IsActive));
         }
         catch (DbUpdateException exception)
             when (FindPostgresException(exception) is
@@ -94,6 +112,21 @@ public sealed class ReservationsController(HotdesksBookingDbContext dbContext) :
                 Title = "The hotdesk is already reserved for the requested time range."
             });
         }
+    }
+
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
+    {
+        var reservation = await dbContext.Reservations.FindAsync([id], cancellationToken);
+        if (reservation is null)
+        {
+            return NotFound();
+        }
+
+        reservation.IsActive = false;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
     }
 
     private static PostgresException? FindPostgresException(Exception exception)

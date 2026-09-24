@@ -5,4 +5,5 @@ public sealed record ReservationResponse(
     Guid UserId,
     Guid HotdeskId,
     DateTimeOffset From,
-    DateTimeOffset To);
+    DateTimeOffset To,
+    bool IsActive);

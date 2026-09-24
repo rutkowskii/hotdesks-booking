@@ -12,6 +12,8 @@ public sealed class Reservation
 
     public DateTimeOffset To { get; set; }
 
+    public bool IsActive { get; set; } = true;
+
     public User User { get; set; } = null!;
 
     public Hotdesk Hotdesk { get; set; } = null!;

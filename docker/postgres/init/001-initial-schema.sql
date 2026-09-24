@@ -26,6 +26,7 @@ CREATE TABLE "Reservations" (
     "HotdeskId" uuid NOT NULL,
     "From" timestamp with time zone NOT NULL,
     "To" timestamp with time zone NOT NULL,
+    "IsActive" boolean NOT NULL DEFAULT TRUE,
     CONSTRAINT "PK_Reservations" PRIMARY KEY ("Id"),
     CONSTRAINT "FK_Reservations_Hotdesks_HotdeskId"
         FOREIGN KEY ("HotdeskId") REFERENCES "Hotdesks" ("Id") ON DELETE RESTRICT,
@@ -45,11 +46,13 @@ ALTER TABLE "Reservations"
     EXCLUDE USING gist (
         "HotdeskId" WITH =,
         tstzrange("From", "To", '[)') WITH &&
-    );
+    )
+    WHERE ("IsActive");
 
 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
 VALUES
     ('20260922103938_InitialCreate', '10.0.12'),
     ('20260922134210_AddIsEnabledToHotdesk', '10.0.12'),
     ('20260922143303_AddUsersAndReservations', '10.0.12'),
-    ('20260922152818_AddReservationOverlapConstraint', '10.0.12');
+    ('20260922152818_AddReservationOverlapConstraint', '10.0.12'),
+    ('20260924034236_AddIsActiveToReservations', '10.0.12');

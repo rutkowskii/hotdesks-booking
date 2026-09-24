@@ -58,6 +58,10 @@ public sealed class HotdesksBookingDbContext(
             entity.Property(reservation => reservation.To)
                 .IsRequired();
 
+            entity.Property(reservation => reservation.IsActive)
+                .HasDefaultValue(true)
+                .IsRequired();
+
             entity.ToTable(table => table.HasCheckConstraint(
                 "CK_Reservations_FromBeforeTo",
                 "\"From\" < \"To\""));
