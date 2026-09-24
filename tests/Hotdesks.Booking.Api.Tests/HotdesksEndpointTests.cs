@@ -79,6 +79,35 @@ public sealed class HotdesksEndpointTests(HotdesksApiFactory factory) : IClassFi
     }
 
     [Fact]
+    public async Task Users_can_be_created()
+    {
+        using var client = factory.CreateClient();
+        var userId = Guid.Empty;
+
+        try
+        {
+            var response = await client.PostAsJsonAsync(
+                "/api/users",
+                new CreateUserRequest
+                {
+                    Name = $"Integration user {Guid.NewGuid():N}"
+                });
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+            var user = await response.Content.ReadFromJsonAsync<User>();
+            Assert.NotNull(user);
+            Assert.NotEqual(Guid.Empty, user.Id);
+            Assert.StartsWith("Integration user ", user.Name);
+            userId = user.Id;
+        }
+        finally
+        {
+            await RemoveUserAsync(userId);
+        }
+    }
+
+    [Fact]
     public async Task Adding_a_reservation_for_a_nonexistent_user_fails()
     {
         using var client = factory.CreateClient();
