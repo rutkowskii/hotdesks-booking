@@ -1,132 +1,110 @@
 # Hotdesks Booking API
 
-ASP.NET Core API for managing hotdesks and their reservations. It uses PostgreSQL
-to enforce that an active hotdesk cannot have overlapping reservations.
+ASP.NET Core API for managing hotdesks and reservations. PostgreSQL prevents
+overlapping active reservations for the same hotdesk.
 
 ## Run the service
 
 ### Prerequisites
 
-- .NET 10 SDK
-- Docker Desktop running
+- .NET 10 SDK for Windows
+- Docker and a WSL distribution with `curl`
 
-From the repository root, start PostgreSQL:
+From Windows PowerShell, start the databases in WSL:
 
 ```powershell
-docker compose up -d
+wsl.exe sh -lc "cd /mnt/d/repos/hotdesks-booking && docker compose up -d"
 ```
 
-The connection string checked into the repository has its password redacted.
-Set the development connection string for the current PowerShell session, then
-start the API:
+The checked-in connection string has its password redacted. Set the local
+development connection string for the current PowerShell session and start the
+API:
 
 ```powershell
 $env:ConnectionStrings__HotdesksBooking = "Host=localhost;Port=5432;Database=hotdesks-booking;Username=postgres;Password=postgres"
-dotnet run --project .\src\Hotdesks.Booking.Api
+$env:ASPNETCORE_URLS = "http://0.0.0.0:5168"
+dotnet run --no-launch-profile --project .\src\Hotdesks.Booking.Api
 ```
 
-The service listens on `http://localhost:5168`. Stop it with `Ctrl+C`. To stop
-the database later, run `docker compose down`.
+The API listens on port `5168` on the Windows host. Keep this process running
+and open a second terminal to call it. Stop it with `Ctrl+C`.
 
-### Call the API from PowerShell
+## Call the API with curl from WSL
 
-The commands below use `Invoke-RestMethod`, PowerShell's native HTTP client.
-In Windows PowerShell, `curl` is an alias for `Invoke-WebRequest`; prefer
-`Invoke-RestMethod` here because it automatically deserializes JSON responses.
-Do not use `curl -Method ...` in PowerShell 7, where `curl` commonly resolves
-to `curl.exe` instead.
-
-Set the base URL and create a hotdesk:
+Open WSL from a second Windows PowerShell terminal:
 
 ```powershell
-$api = "http://localhost:5168"
-
-$hotdesk = Invoke-RestMethod -Method Post -Uri "$api/api/hotdesks" `
-  -ContentType "application/json" `
-  -Body (@{ name = "Window desk"; isAvailable247 = $true } | ConvertTo-Json)
-
-$hotdesk
-Invoke-RestMethod -Method Get -Uri "$api/api/hotdesks"
+wsl.exe
 ```
 
-Create a user before adding a reservation:
+Run the following commands in the WSL shell. They use the standard `curl`
+binary, not PowerShell's `curl` alias. The first command obtains the Windows
+host's WSL gateway address, where the API is running.
 
-```powershell
-$user = Invoke-RestMethod -Method Post -Uri "$api/api/users" `
-  -ContentType "application/json" `
-  -Body (@{ name = "Example User" } | ConvertTo-Json)
+```bash
+api=http://$(ip route show default | awk '{print $3}'):5168
+
+user_json=$(curl --silent --show-error --fail-with-body \
+  --request POST "$api/api/users" \
+  --header "Content-Type: application/json" \
+  --data '{"name":"Example User"}')
+printf '%s\n' "$user_json"
+user_id=$(printf '%s' "$user_json" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+
+hotdesk_json=$(curl --silent --show-error --fail-with-body \
+  --request POST "$api/api/hotdesks" \
+  --header "Content-Type: application/json" \
+  --data '{"name":"Window desk","isAvailable247":true}')
+printf '%s\n' "$hotdesk_json"
+hotdesk_id=$(printf '%s' "$hotdesk_json" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+
+curl --silent --show-error --fail-with-body \
+  --request POST "$api/reservation/add" \
+  --header "Content-Type: application/json" \
+  --data "{\"userId\":\"$user_id\",\"hotdeskId\":\"$hotdesk_id\",\"from\":\"2026-10-01T09:00:00Z\",\"to\":\"2026-10-01T10:00:00Z\"}"
+printf '\n'
+
+curl --silent --show-error --fail-with-body \
+  --request POST "$api/reservation/add" \
+  --header "Content-Type: application/json" \
+  --data "{\"userId\":\"$user_id\",\"hotdeskId\":\"$hotdesk_id\",\"from\":\"2026-10-01T10:00:00Z\",\"to\":\"2026-10-01T11:00:00Z\"}"
+printf '\n'
+
+curl --silent --show-error --fail-with-body "$api/reservation"
+printf '\n'
 ```
 
-Create, list, edit, cancel, and inspect the history of a reservation. The
-`$reservation` response supplies both IDs needed by subsequent requests:
-
-```powershell
-$from = (Get-Date).ToUniversalTime().AddHours(1).ToString("o")
-$to = (Get-Date).ToUniversalTime().AddHours(2).ToString("o")
-
-$reservation = Invoke-RestMethod -Method Post -Uri "$api/reservation/add" `
-  -ContentType "application/json" `
-  -Body (@{
-    userId = $user.id
-    hotdeskId = $hotdesk.id
-    from = $from
-    to = $to
-  } | ConvertTo-Json)
-
-Invoke-RestMethod -Method Get -Uri "$api/reservation"
-Invoke-RestMethod -Method Get -Uri "$api/reservation/$($reservation.versionId)/history"
-
-$editedFrom = (Get-Date).ToUniversalTime().AddHours(3).ToString("o")
-$editedTo = (Get-Date).ToUniversalTime().AddHours(4).ToString("o")
-$editedReservation = Invoke-RestMethod -Method Post -Uri "$api/reservation/$($reservation.id)/edit" `
-  -ContentType "application/json" `
-  -Body (@{
-    hotdeskId = $hotdesk.id
-    from = $editedFrom
-    to = $editedTo
-  } | ConvertTo-Json)
-
-Invoke-RestMethod -Method Post -Uri "$api/reservation/$($editedReservation.id)/cancel"
-Invoke-RestMethod -Method Delete -Uri "$api/api/hotdesks/$($hotdesk.id)"
-```
-
-Deleting a hotdesk is a soft delete: it removes the desk from the list of
-available desks without deleting its record.
+The two reservation intervals are adjacent rather than overlapping, so both
+requests should return `201 Created`. Change the second reservation's `from`
+time to `2026-10-01T09:30:00Z` to verify the expected `409 Conflict`.
 
 ## Run tests
 
-Start the separate test database, set its connection string in the current
-PowerShell session, and run the integration tests:
+Start the separate test database in WSL, then run the tests from Windows
+PowerShell:
 
 ```powershell
-docker compose up -d test-postgres
+wsl.exe sh -lc "cd /mnt/d/repos/hotdesks-booking && docker compose up -d test-postgres"
 $env:ConnectionStrings__HotdesksBooking = "Host=localhost;Port=5433;Database=test-hotdesks-booking;Username=test-postgres;Password=test-postgres"
 dotnet test .\tests\Hotdesks.Booking.Api.Tests\Hotdesks.Booking.Api.Tests.csproj
 ```
 
-The tests use the shared `test-postgres` database and clean up records they
-create. Do not run multiple test commands against that database concurrently.
+The tests use a shared database and clean up their own records. Do not run
+multiple test commands against it concurrently.
 
 ## Key decisions, trade-offs, and limitations
 
-- **PostgreSQL is the source of truth for conflicting bookings.** The API first
-  checks for overlapping active reservations to return a helpful `409`, and a
-  PostgreSQL exclusion constraint enforces the same rule under concurrent
-  writes. This requires PostgreSQL and the `btree_gist` extension rather than
-  a database-agnostic implementation.
-- **Reservations are versioned, not overwritten.** Editing or cancelling a
-  current reservation creates a new version and retains the prior row. The
-  normal list endpoint returns current versions; the history endpoint returns
-  all versions for a `versionId`. This preserves an audit trail at the cost of
-  extra rows and explicit version handling.
-- **Hotdesk deletion is a soft delete.** This preserves reservation history
-  and prevents new reservations on the disabled desk, but a disabled desk is
-  not exposed by the list endpoint.
-- **Schema creation is Docker initialization, not runtime migration.** The
-  initialization SQL runs only when Docker creates a named volume. When adding
-  migrations, recreate the local database volume or apply the migration by a
-  separate deployment process.
-- **This is a focused API, not a complete product.** It has no authentication,
-  authorization, user listing, updates, or deletion, pagination, OpenAPI/Swagger
-  UI, or production deployment configuration. The development passwords are
-  only for the local Docker containers and must not be used in production.
+- **Database-enforced booking conflicts.** The API returns a helpful `409` for
+  an overlap, while a PostgreSQL exclusion constraint guarantees the rule under
+  concurrent writes. This depends on PostgreSQL and its `btree_gist` extension.
+- **Versioned reservations.** Editing or cancelling creates a new version
+  rather than overwriting the prior record. The list endpoint returns current
+  versions and the history endpoint returns all versions for a reservation.
+- **Soft-deleted hotdesks.** Deleting a desk disables it, preserving
+  reservation history while preventing new reservations.
+- **Manual schema lifecycle.** Docker initialization SQL runs only for a new
+  named volume. Apply later migrations through a deployment process or
+  recreate the local volume.
+- **Product scope.** The API has no authentication, authorization, user
+  listing/updates/deletion, pagination, OpenAPI UI, or production deployment
+  configuration. The local Docker credentials are not production credentials.
