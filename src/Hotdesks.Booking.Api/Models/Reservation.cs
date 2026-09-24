@@ -4,6 +4,12 @@ public sealed class Reservation
 {
     public Guid Id { get; set; }
 
+    public Guid VersionId { get; set; } = Guid.NewGuid();
+
+    public int Version { get; set; } = 1;
+
+    public bool IsLastVersion { get; set; } = true;
+
     public Guid UserId { get; set; }
 
     public Guid HotdeskId { get; set; }

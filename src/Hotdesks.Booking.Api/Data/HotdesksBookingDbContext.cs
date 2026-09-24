@@ -52,6 +52,22 @@ public sealed class HotdesksBookingDbContext(
         {
             entity.HasKey(reservation => reservation.Id);
 
+            entity.Property(reservation => reservation.VersionId)
+                .IsRequired();
+
+            entity.Property(reservation => reservation.Version)
+                .IsRequired();
+
+            entity.Property(reservation => reservation.IsLastVersion)
+                .IsConcurrencyToken()
+                .HasDefaultValue(true)
+                .IsRequired();
+
+            entity.HasIndex(reservation => reservation.VersionId)
+                .IsUnique()
+                .HasFilter("\"IsLastVersion\"")
+                .HasDatabaseName("UX_Reservations_VersionId_LastVersion");
+
             entity.Property(reservation => reservation.From)
                 .IsRequired();
 

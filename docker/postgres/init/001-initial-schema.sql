@@ -22,6 +22,9 @@ CREATE TABLE "Users" (
 
 CREATE TABLE "Reservations" (
     "Id" uuid NOT NULL,
+    "VersionId" uuid NOT NULL,
+    "Version" integer NOT NULL DEFAULT 1,
+    "IsLastVersion" boolean NOT NULL DEFAULT TRUE,
     "UserId" uuid NOT NULL,
     "HotdeskId" uuid NOT NULL,
     "From" timestamp with time zone NOT NULL,
@@ -47,7 +50,7 @@ ALTER TABLE "Reservations"
         "HotdeskId" WITH =,
         tstzrange("From", "To", '[)') WITH &&
     )
-    WHERE ("IsActive");
+    WHERE ("IsActive" AND "IsLastVersion");
 
 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
 VALUES
@@ -55,4 +58,5 @@ VALUES
     ('20260922134210_AddIsEnabledToHotdesk', '10.0.12'),
     ('20260922143303_AddUsersAndReservations', '10.0.12'),
     ('20260922152818_AddReservationOverlapConstraint', '10.0.12'),
-    ('20260924034236_AddIsActiveToReservations', '10.0.12');
+    ('20260924034236_AddIsActiveToReservations', '10.0.12'),
+    ('20260924042842_AddReservationVersioning', '10.0.12');
